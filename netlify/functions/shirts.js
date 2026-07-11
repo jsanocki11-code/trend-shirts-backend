@@ -1,12 +1,14 @@
 // netlify/functions/shirts.js
 //
+// Manages the shirts list using JSONBin as storage (server-side only --
+// the JSONBin key never reaches the browser, since this function runs
+// on Netlify's servers).
+//
 // GET  -> returns the current list of shirts
-// POST -> body: { action: "add", shirt: {...} } or { action: "remove", index: N }
-//         or { action: "replace", shirts: [...] }
-// All changes save immediately -- no download/upload step needed.
+// POST -> body: { password, action: "replace", shirts: [...] }
 
-const { getStore } = require("@netlify/blobs");
-
+const JSONBIN_BIN_ID = "6a52586ada38895dfe4f9c08";
+const JSONBIN_API_KEY = "$2a$10$1fQ9hOQqwYeFflvLWPWxee1K/rE2xgS3SnjoUj5bzcS6tHycI8RAO";
 const ADMIN_PASSWORD = "apache";
 
 exports.handler = async function (event) {
@@ -20,35 +22,46 @@ exports.handler = async function (event) {
     return { statusCode: 200, headers, body: "" };
   }
 
-  const store = getStore("trend-shirts");
+  const binUrl = `https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`;
 
   if (event.httpMethod === "GET") {
-    const list = (await store.get("shirts", { type: "json" })) || [];
-    return { statusCode: 200, headers, body: JSON.stringify(list) };
+    try {
+      const res = await fetch(binUrl + "/latest", {
+        headers: { "X-Master-Key": JSONBIN_API_KEY },
+      });
+      const data = await res.json();
+      const record = data.record || {};
+      return { statusCode: 200, headers, body: JSON.stringify(record.shirts || []) };
+    } catch (err) {
+      return { statusCode: 200, headers, body: JSON.stringify([]) };
+    }
   }
 
   if (event.httpMethod === "POST") {
     try {
       const body = JSON.parse(event.body || "{}");
-
       if (body.password !== ADMIN_PASSWORD) {
         return { statusCode: 401, headers, body: JSON.stringify({ error: "Wrong password" }) };
       }
 
-      let list = (await store.get("shirts", { type: "json" })) || [];
+      const currentRes = await fetch(binUrl + "/latest", {
+        headers: { "X-Master-Key": JSONBIN_API_KEY },
+      });
+      const currentData = await currentRes.json();
+      const record = currentData.record || {};
 
-      if (body.action === "add") {
-        list.push(body.shirt);
-      } else if (body.action === "remove") {
-        list.splice(body.index, 1);
-      } else if (body.action === "replace") {
-        list = body.shirts;
-      } else {
-        return { statusCode: 400, headers, body: JSON.stringify({ error: "Unknown action" }) };
-      }
+      record.shirts = body.shirts || [];
 
-      await store.setJSON("shirts", list);
-      return { statusCode: 200, headers, body: JSON.stringify(list) };
+      await fetch(binUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": JSONBIN_API_KEY,
+        },
+        body: JSON.stringify(record),
+      });
+
+      return { statusCode: 200, headers, body: JSON.stringify(record.shirts) };
     } catch (err) {
       return { statusCode: 500, headers, body: JSON.stringify({ error: "Could not save" }) };
     }
