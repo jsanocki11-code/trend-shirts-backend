@@ -1,8 +1,9 @@
 // netlify/functions/get-trends.js
 //
-// Server-side fetch of trending topics from sports/news/pop-culture
-// subreddits. Runs on Netlify's servers, not the visitor's browser, so
-// there's no CORS/CSP issue and no exposed keys.
+// Server-side fetch of trending topics from RSS feeds (ESPN for sports,
+// BBC for news, Entertainment Weekly for pop culture). RSS feeds are
+// built for automated fetching, unlike Reddit's API which blocks a lot
+// of cloud-hosting IP ranges (including Netlify's).
 
 exports.handler = async function (event) {
   const headers = {
@@ -16,42 +17,17 @@ exports.handler = async function (event) {
   }
 
   const sources = [
-    { name: "Sports", subreddit: "sports" },
-    { name: "NFL", subreddit: "nfl" },
-    { name: "News", subreddit: "news" },
-    { name: "Pop Culture", subreddit: "popculturechat" },
+    { name: "Sports", url: "https://www.espn.com/espn/rss/news" },
+    { name: "News", url: "https://feeds.bbci.co.uk/news/rss.xml" },
+    { name: "Pop Culture", url: "https://ew.com/feed/" },
   ];
 
   try {
     const results = await Promise.all(
       sources.map(async (source) => {
         try {
-          const res = await fetch(
-            `https://www.reddit.com/r/${source.subreddit}/hot.json?limit=5&raw_json=1`,
-            {
-              headers: {
-                "User-Agent":
-                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-              },
-            }
-          );
-          const data = await res.json();
-          const posts = (data.data?.children || [])
-            .map((p) => p.data.title)
-            .filter(Boolean);
-          return { name: source.name, posts };
-        } catch (err) {
-          return { name: source.name, posts: [] };
-        }
-      })
-    );
-
-    return { statusCode: 200, headers, body: JSON.stringify({ results }) };
-  } catch (err) {
-    return {
-      statusCode: 502,
-      headers,
-      body: JSON.stringify({ error: "Could not fetch trends right now." }),
-    };
-  }
-};
+          const res = await fetch(source.url, {
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; trend-shirt-app/1.0)" },
+          });
+          const xml = await res.text();
+          const titles = [...xml.matchAll(/<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>/g)]
