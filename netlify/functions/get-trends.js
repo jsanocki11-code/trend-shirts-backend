@@ -27,8 +27,13 @@ exports.handler = async function (event) {
       sources.map(async (source) => {
         try {
           const res = await fetch(
-            `https://www.reddit.com/r/${source.subreddit}/hot.json?limit=5`,
-            { headers: { "User-Agent": "trend-shirt-app/1.0" } }
+            `https://www.reddit.com/r/${source.subreddit}/hot.json?limit=5&raw_json=1`,
+            {
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+              },
+            }
           );
           const data = await res.json();
           const posts = (data.data?.children || [])
